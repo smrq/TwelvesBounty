@@ -9,11 +9,16 @@ using System.Numerics;
 
 namespace TwelvesBounty {
 	public class RouteManager(Configuration configuration, IPC.Navmesh navmeshIPC) {
-		private class RouteState(Route route) {
+		private const float WaypointRadius = 25.0f;
+		private const float NodeRadius = 2.0f;
+		private const float WalkRadius = 25.0f;
+
+		private class RouteState(Route route, int startingWaypointGroup) {
 			public Route Route { get; init; } = route;
-			public int CurrentWaypointGroup { get; set; } = 0;
+			public int CurrentWaypointGroup { get; set; } = startingWaypointGroup;
 			public int LastSuccessfulWaypointGroup { get; set; } = -1;
 			public IGameObject? TargetNode { get; set; } = null;
+			public Vector3? TargetPosition { get; set; } = null;
 			public HashSet<ulong> VisitedNodes { get; set; } = [];
 			public RouteStateEnum State { get; set; } = RouteStateEnum.StartWaypoint;
 		}
@@ -27,6 +32,8 @@ namespace TwelvesBounty {
 			InteractingWithNode,
 			NextNode,
 			NextWaypoint,
+			ExtractingMateria,
+			RepairingGear,
 		}
 
 		private Configuration Configuration { get; init; } = configuration;
@@ -59,8 +66,8 @@ namespace TwelvesBounty {
 			}
 		}
 
-		public void Start(Route route) {
-			State = new RouteState(route);
+		public void Start(Route route, int startingWaypointGroup = 0) {
+			State = new RouteState(route, startingWaypointGroup);
 		}
 
 		public void Stop() {
@@ -85,19 +92,22 @@ namespace TwelvesBounty {
 							var nearest = NearestUnvisitedNode();
 							if (nearest != null) {
 								State.TargetNode = nearest;
+								State.TargetPosition = GetInteractPosition(nearest.Position, NodeRadius); ;
 								State.State = RouteStateEnum.StartNavigatingToNode;
-								Plugin.PluginLog.Debug($"StartNavigatingToNode {nearest.DataId.ToString("X")} {nearest.Position}");
+								Plugin.PluginLog.Debug($"StartNavigatingToNode {State.TargetNode.DataId.ToString("X")} {State.TargetPosition}");
 							} else {
+								State.TargetNode = null;
+								State.TargetPosition = group.Waypoint;
 								State.State = RouteStateEnum.StartNavigatingToWaypoint;
-								Plugin.PluginLog.Debug($"StartNavigatingToWaypoint {group.Waypoint}");
+								Plugin.PluginLog.Debug($"StartNavigatingToWaypoint {State.TargetPosition}");
 							}
 							break;
 						}
 
 					case RouteStateEnum.StartNavigatingToWaypoint:
-						if (ExecutePathfind(group.Waypoint, true)) {
+						if (ExecutePathfind(State.TargetPosition!.Value, true)) {
 							State.State = RouteStateEnum.NavigatingToWaypoint;
-							Plugin.PluginLog.Debug($"NavigatingToWaypoint {group.Waypoint}");
+							Plugin.PluginLog.Debug($"NavigatingToWaypoint {State.TargetPosition}");
 						}
 						break;
 
@@ -109,9 +119,10 @@ namespace TwelvesBounty {
 									NavmeshIPC.Stop();
 								}
 								State.TargetNode = nearest;
+								State.TargetPosition = GetInteractPosition(nearest.Position, NodeRadius);
 								State.State = RouteStateEnum.StartNavigatingToNode;
-								Plugin.PluginLog.Debug($"StartNavigatingToNode {nearest.DataId.ToString("X")} {nearest.Position}");
-							} else if (WithinRadius(group.Waypoint, Configuration.WaypointRadius)) {
+								Plugin.PluginLog.Debug($"StartNavigatingToNode {State.TargetNode.DataId.ToString("X")} {State.TargetPosition}");
+							} else if (WithinRadius(group.Waypoint, WaypointRadius)) {
 								if (NavmeshIPC.IsRunning()) {
 									NavmeshIPC.Stop();
 								}
@@ -128,23 +139,23 @@ namespace TwelvesBounty {
 						}
 
 					case RouteStateEnum.StartNavigatingToNode:
-						if (ExecutePathfind(State.TargetNode!.Position, !WithinRadius(State.TargetNode!.Position, Configuration.WalkRadius))) {
+						if (ExecutePathfind(State.TargetPosition!.Value, !WithinRadius(State.TargetPosition!.Value, WalkRadius))) {
 							State.State = RouteStateEnum.NavigatingToNode;
-							Plugin.PluginLog.Debug($"NavigatingToNode {State.TargetNode!.DataId.ToString("X")} {State.TargetNode!.Position}");
+							Plugin.PluginLog.Debug($"NavigatingToNode {State.TargetNode!.DataId.ToString("X")} {State.TargetPosition}");
 						}
 						break;
 
 					case RouteStateEnum.NavigatingToNode:
-						if (WithinRadius(State.TargetNode!.Position, Configuration.NodeRadius)) {
+						if (WithinRadius(State.TargetPosition!.Value, NodeRadius)) {
 							if (NavmeshIPC.IsRunning()) {
 								NavmeshIPC.Stop();
 							}
 							State.State = RouteStateEnum.InteractingWithNode;
-							Plugin.PluginLog.Debug($"InteractingWithNode {State.TargetNode!.DataId.ToString("X")} {State.TargetNode!.Position}");
+							Plugin.PluginLog.Debug($"InteractingWithNode {State.TargetNode!.DataId.ToString("X")} {State.TargetPosition}");
 						}
 						//else {
 						//	if (!NavmeshIPC.IsRunning()) {
-						//		Plugin.PluginLog.Warning($"Failed to navigate to node {State.TargetNode!.DataId.ToString("X")} at {State.TargetNode!.Position}");
+						//		Plugin.PluginLog.Warning($"Failed to navigate to node {State.TargetNode!.DataId.ToString("X")} at {State.TargetPosition}");
 						//		State.State = RouteStateEnum.NextNode;
 						//	}
 						//}
@@ -165,15 +176,22 @@ namespace TwelvesBounty {
 
 					case RouteStateEnum.NextNode:
 						{
-							var nearest = NearestUnvisitedNode();
-							if (nearest != null) {
-								State.TargetNode = nearest;
-								State.State = RouteStateEnum.StartNavigatingToNode;
-								Plugin.PluginLog.Debug($"StartNavigatingToNode {nearest.DataId.ToString("X")} {nearest.Position}");
-							} else {
-								State.State = RouteStateEnum.NextWaypoint;
-								Plugin.PluginLog.Debug($"NextWaypoint");
-							}
+							// if (needs extract) {
+
+							// } else if (needs repair) {
+
+							// } else {
+								var nearest = NearestUnvisitedNode();
+								if (nearest != null) {
+									State.TargetNode = nearest;
+									State.TargetPosition = GetInteractPosition(nearest.Position, NodeRadius);
+									State.State = RouteStateEnum.StartNavigatingToNode;
+									Plugin.PluginLog.Debug($"StartNavigatingToNode {nearest.DataId.ToString("X")} {State.TargetPosition}");
+								} else {
+									State.State = RouteStateEnum.NextWaypoint;
+									Plugin.PluginLog.Debug($"NextWaypoint");
+								}
+							// }
 							break;
 						}
 
@@ -188,19 +206,24 @@ namespace TwelvesBounty {
 							Plugin.PluginLog.Debug($"StartWaypoint {State.CurrentWaypointGroup}");
 						}
 						break;
+
+
 				}
 			}
 		}
+
 		private bool ExecutePathfind(Vector3 point, bool fly) {
-			if (fly) {
-				if (!Plugin.Condition[ConditionFlag.Mounted]) {
-					ExecuteMount();
-					return false;
-				}
-				if (!Plugin.Condition[ConditionFlag.InFlight] && !Plugin.Condition[ConditionFlag.Diving]) {
-					ExecuteJump();
-					return false;
-				}
+			// navmesh doesn't seem to execute when diving and not mounted, idk
+			var flyOrDive = fly || Plugin.Condition[ConditionFlag.Diving];
+
+			if (flyOrDive && !Plugin.Condition[ConditionFlag.Mounted]) {
+				ExecuteMount();
+				return false;
+			}
+
+			if (fly && !Plugin.Condition[ConditionFlag.InFlight] && !Plugin.Condition[ConditionFlag.Diving]) {
+				ExecuteJump();
+				return false;
 			}
 
 			if (!NavmeshIPC.IsReady()) {
@@ -208,7 +231,7 @@ namespace TwelvesBounty {
 				return false;
 			}
 			
-			NavmeshIPC.PathfindAndMoveTo(point, fly);
+			NavmeshIPC.PathfindAndMoveTo(point, flyOrDive);
 			return true;
 		}
 
@@ -304,6 +327,16 @@ namespace TwelvesBounty {
 					group.NodeObjectIds.Contains(obj.DataId))
 				.OrderBy(obj => (obj.Position - Plugin.ClientState.LocalPlayer!.Position).LengthSquared())
 				.FirstOrDefault();
+		}
+
+		private Vector3 GetInteractPosition(Vector3 objPosition, float radius) {
+			//var position = NavmeshIPC.PointOnFloor(objPosition, false, radius);
+			var position = NavmeshIPC.NearestPoint(objPosition, radius, radius);
+			if (position == null) {
+				Plugin.PluginLog.Warning($"Could not find interaction point near {objPosition}");
+				return objPosition;
+			}
+			return position.Value;
 		}
 	}
 }
