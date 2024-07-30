@@ -1,9 +1,9 @@
 using Dalamud.Configuration;
-using Lumina.Excel.GeneratedSheets;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.Numerics;
-using System.Runtime.Serialization;
+using System.IO;
+using TwelvesBounty.Data;
 
 namespace TwelvesBounty;
 
@@ -18,54 +18,18 @@ public class Configuration : IPluginConfiguration {
 	public void Save() {
 		Plugin.PluginInterface.SavePluginConfig(this);
 	}
-}
 
-[Serializable]
-public class Route {
-	public Guid Id { get; set; } = Guid.Empty;
-	public string Name { get; set; } = string.Empty;
-	public List<WaypointGroup> WaypointGroups { get; set; } = [];
-
-	[IgnoreDataMember]
-	public uint? MapId {
-		get {
-			if (WaypointGroups.Count == 0) {
-				return null;
+	public static Configuration LoadConfiguration(string filename) {
+		var configText = File.ReadAllText(filename);
+		var configJson = JObject.Parse(configText);
+		if (configJson != null) {
+			if ((int?)configJson["Version"] == 0) {
+				var config = configJson.ToObject<Configuration>();
+				if (config != null) {
+					return config!;
+				}
 			}
-			return WaypointGroups[0].MapId;
 		}
-	}
-
-	[IgnoreDataMember]
-	public string MapName {
-		get {
-			if (WaypointGroups.Count == 0) {
-				return string.Empty;
-			}
-			return WaypointGroups[0].MapName;
-		}
-	}
-}
-
-[Serializable]
-public class WaypointGroup {
-	public uint MapId { get; set; } = 0;
-	public Vector3 Waypoint { get; set; } = Vector3.Zero;
-	public List<ulong> NodeObjectIds { get; set; } = [];
-
-	[IgnoreDataMember]
-	public string MapName {
-		get {
-			var mapSheet = Plugin.DataManager.GetExcelSheet<Map>()!;
-			var map = mapSheet.GetRow(MapId);
-			if (map == null) {
-				return string.Empty;
-			}
-			var placeName = map.PlaceName.Value;
-			if (placeName == null) {
-				return string.Empty;
-			}
-			return placeName.Name;
-		}
+		return new Configuration();
 	}
 }

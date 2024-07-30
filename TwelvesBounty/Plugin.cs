@@ -1,8 +1,10 @@
 using Dalamud.Game.Command;
+using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
-using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
+using TwelvesBounty.Exec;
+using TwelvesBounty.Services;
 using TwelvesBounty.Windows;
 
 namespace TwelvesBounty;
@@ -23,24 +25,23 @@ public sealed class Plugin : IDalamudPlugin {
 	public Configuration Configuration { get; init; }
 
 	public readonly WindowSystem WindowSystem = new("TwelvesBounty");
-	private IPC.Navmesh NavmeshIPC { get; init; }
+	private ServiceInstances Services { get; init; }
 	private RouteManager RouteManager { get; init; }
 	private RoutesWindow RoutesWindow { get; init; }
 
 	public Plugin() {
-		Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-		NavmeshIPC = new IPC.Navmesh();
-		RouteManager = new RouteManager(Configuration, NavmeshIPC);
+		Configuration = Configuration.LoadConfiguration(PluginInterface.ConfigFile.FullName);
+		Services = new ServiceInstances();
+		RouteManager = new RouteManager(Services);
 		RoutesWindow = new RoutesWindow(Configuration, RouteManager);
 
 		WindowSystem.AddWindow(RoutesWindow);
 
 		CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand) {
-			HelpMessage = "A useful message to display in /xlhelp"
+			HelpMessage = "Opens the main window"
 		});
 
 		PluginInterface.UiBuilder.Draw += DrawUI;
-		// PluginInterface.UiBuilder.OpenConfigUi += ToggleC	onfigUI;
 		PluginInterface.UiBuilder.OpenMainUi += ToggleRoutesWindow;
 
 		Framework.Update += (IFramework framework) => RouteManager.Update();

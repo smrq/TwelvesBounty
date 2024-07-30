@@ -1,11 +1,11 @@
 using System;
-using System.Collections.Generic;
 
 namespace TwelvesBounty {
-	public class Throttle {
+	public class Throttle(float throttleSeconds = 0.5f) {
 		private DateTime minNextAction;
+		private float throttleSeconds = throttleSeconds;
 
-		public bool Execute(Action action, float throttleSeconds = 0.5f) {
+		public bool Execute(Action action) {
 			var now = DateTime.Now;
 			if (now < minNextAction) {
 				return false;
@@ -14,6 +14,14 @@ namespace TwelvesBounty {
 			action();
 			minNextAction = now.AddSeconds(throttleSeconds);
 			return true;
+		}
+		public static bool ExecuteConditional(Throttle? throttle, Action action) {
+			if (throttle != null) {
+				return throttle.Execute(action);
+			} else {
+				action();
+				return true;
+			}
 		}
 	}
 }
