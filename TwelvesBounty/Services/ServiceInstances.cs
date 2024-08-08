@@ -3,6 +3,7 @@ using TwelvesBounty.IPC;
 namespace TwelvesBounty.Services {
 	public class ServiceInstances {
 		public ActionService ActionService { get; init; }
+		public GearsetService GearsetService { get; init; }
 		public NavigationService NavigationService { get; init; }
 		public SpiritbondService SpiritbondService { get; init; }
 		public TimeService TimeService { get; init; }
@@ -13,6 +14,7 @@ namespace TwelvesBounty.Services {
 		public ServiceInstances() {
 			NavmeshIPC = new NavmeshIPC();
 			ActionService = new ActionService(actionThrottle);
+			GearsetService = new GearsetService();
 			NavigationService = new NavigationService(ActionService, NavmeshIPC);
 			SpiritbondService = new SpiritbondService(actionThrottle);
 			TimeService = new TimeService();

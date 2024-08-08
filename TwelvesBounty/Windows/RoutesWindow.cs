@@ -1,5 +1,6 @@
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Utility;
@@ -9,22 +10,26 @@ using System.Linq;
 using System.Numerics;
 using TwelvesBounty.Data;
 using TwelvesBounty.Exec;
+using TwelvesBounty.Services;
 
 namespace TwelvesBounty.Windows;
 
 public class RoutesWindow : Window, IDisposable {
 	private Configuration Configuration { get; init; }
 	private RouteManager RouteManager { get; init; }
+	private ServiceInstances Services { get; init; }
 
 	private Route? activeRoute = null;
 
 	private readonly Vector4 activeColor = new(1.0f, 0.6f, 0.4f, 1.0f);
+	private string confirmationId = string.Empty;
 
-	public RoutesWindow(Configuration configuration, RouteManager routeManager) : base("Twelve's Bounty###RoutesWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse) {
+	public RoutesWindow(Configuration configuration, RouteManager routeManager, ServiceInstances services) : base("Twelve's Bounty##RoutesWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse) {
 		Size = new Vector2(800, 800);
 		SizeCondition = ImGuiCond.FirstUseEver;
 		Configuration = configuration;
 		RouteManager = routeManager;
+		Services = services;
 	}
 
 	public void Dispose() { }
@@ -57,20 +62,14 @@ public class RoutesWindow : Window, IDisposable {
 		DrawRouteEditColumn();
 	}
 
+	private string confirmState = string.Empty;
 	private void DrawRouteListColumn() {
-		//var targetObjectId = Plugin.ClientState.LocalPlayer?.TargetObject?.DataId ?? 0;
-		//using (var disabled = ImRaii.Disabled(targetObjectId == 0)) {
-		//	if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Search, "Find targeted route")) {
-		//		activeRoute = Configuration.Routes.Find(route =>
-		//			route.Groups.Any(group =>
-		//				group.MapId == Plugin.ClientState.MapId &&
-		//				group.GatheringNodes.Select(node => node.DataId).Contains(targetObjectId)
-		//			)
-		//		);
-		//	}
-		//}
-
-		using (var disabled = ImRaii.Disabled(RouteManager.Route == null)) {
+		if (RouteManager.Route == null) {
+			using var disabled = ImRaii.Disabled(activeRoute == null);
+			if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Play, "Start route")) {
+				RouteManager.Start(activeRoute!);
+			}
+		} else {
 			if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Stop, "Stop route")) {
 				RouteManager.Stop();
 			}
@@ -85,6 +84,7 @@ public class RoutesWindow : Window, IDisposable {
 				Id = Guid.NewGuid(),
 				Groups = [new() {
 					MapId = Plugin.ClientState.MapId,
+					LinkedGearset = Services.GearsetService.GetEquippedGearsetName(),
 				}]
 			};
 			Configuration.Routes.Add(route);
@@ -92,26 +92,48 @@ public class RoutesWindow : Window, IDisposable {
 			activeRoute = route;
 		}
 
-		DrawRouteList();
-	}
+		ImGui.SameLine();
 
-	private void DrawRouteList() {
-		using var table = ImRaii.Table("RoutesList", 1, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.ScrollY);
-		var routes = Configuration.Routes.OrderBy(route => route.Name);
-		foreach (var route in routes) {
-			DrawRouteListItem(route);
+		using (var disabled = ImRaii.Disabled(activeRoute == null)) {
+			if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, "Duplicate route")) {
+				var route = activeRoute!.Clone();
+				Configuration.Routes.Add(route);
+				Configuration.Save();
+				activeRoute = route;
+			}
 		}
-	}
 
-	private void DrawRouteListItem(Route route) {
-		using var id = ImRaii.PushId(route.Id.ToString());
-		using var color = ImRaii.PushColor(ImGuiCol.Text, activeColor, route == RouteManager.Route);
+		ImGui.SameLine();
+		using (var disabled = ImRaii.Disabled(activeRoute == null || activeRoute == RouteManager.Route)) {
+			if (confirmationId == "Delete route") {
+				if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Trash, "Confirm delete")) {
+					Configuration.Routes.Remove(activeRoute!);
+					activeRoute = null;
+					Configuration.Save();
+					confirmationId = string.Empty;
+				} else if (!ImGui.IsItemHovered()) {
+					confirmationId = string.Empty;
+				}
+			} else {
+				if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Trash, "Delete route")) {
+					confirmationId = "Delete route";
+				}
+			}
+		}
 
-		ImGui.TableNextRow();
-		ImGui.TableNextColumn();
+		using (var table = ImRaii.Table("RoutesList", 1, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.ScrollY)) {
+			var routes = Configuration.Routes.OrderBy(route => route.Name);
+			foreach (var route in routes) {
+				using var id = ImRaii.PushId(route.Id.ToString());
+				using var color = ImRaii.PushColor(ImGuiCol.Text, activeColor, route == RouteManager.Route);
 
-		if (ImGui.Selectable(route.Name.IsNullOrEmpty() ? "Untitled route" : route.Name, route == activeRoute, ImGuiSelectableFlags.SpanAllColumns)) {
-			activeRoute = route;
+				ImGui.TableNextRow();
+				ImGui.TableNextColumn();
+
+				if (ImGui.Selectable(route.Name.IsNullOrEmpty() ? "Untitled route" : route.Name, route == activeRoute, ImGuiSelectableFlags.SpanAllColumns)) {
+					activeRoute = route;
+				}
+			}
 		}
 	}
 
@@ -130,13 +152,6 @@ public class RoutesWindow : Window, IDisposable {
 			Configuration.Save();
 		}
 
-		if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Trash, "Delete route")) {
-			Configuration.Routes.Remove(activeRoute);
-			Configuration.Save();
-			activeRoute = null;
-			return;
-		}
-
 		ImGui.Spacing();
 
 		for (var i = 0; i < activeRoute.Groups.Count; ++i) {
@@ -146,6 +161,7 @@ public class RoutesWindow : Window, IDisposable {
 		if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Plus, "Add group")) {
 			activeRoute.Groups.Add(new () {
 				MapId = Plugin.ClientState.MapId,
+				LinkedGearset = Services.GearsetService.GetEquippedGearsetName(),
 			});
 			Configuration.Save();
 		}
@@ -157,18 +173,14 @@ public class RoutesWindow : Window, IDisposable {
 		var isRunningGroup = isRunningRoute && RouteManager.CurrentGroupIndex == i;
 
 		using var border = ImRaii.PushColor(ImGuiCol.TableBorderStrong, activeColor, isRunningGroup);
-		using var table = ImRaii.Table($"WaypointGroup_{i}", 2, ImGuiTableFlags.Borders);
+		using var table = ImRaii.Table($"WaypointGroup_{i}", 3, ImGuiTableFlags.Borders);
 		ImGui.TableSetupColumn("0", ImGuiTableColumnFlags.WidthFixed);
 		ImGui.TableSetupColumn("1", ImGuiTableColumnFlags.WidthStretch);
+		ImGui.TableSetupColumn("2", ImGuiTableColumnFlags.WidthStretch);
 
 		ImGui.TableNextRow();
 		ImGui.TableNextColumn();
 
-		using (var disabled = ImRaii.Disabled(RouteManager.Route != null)) {
-			if (ImGuiComponents.IconButton("Start", FontAwesomeIcon.Play)) {
-				RouteManager.Start(activeRoute, i, 0);
-			}
-		}
 		using (var disabled = ImRaii.Disabled(i == 0)) {
 			if (ImGuiComponents.IconButton("MoveUp", FontAwesomeIcon.ArrowUp)) {
 				activeRoute.Groups.RemoveAt(i);
@@ -207,56 +219,159 @@ public class RoutesWindow : Window, IDisposable {
 		}
 
 		ImGui.TableNextColumn();
-		using (var detailsTable = ImRaii.Table($"Details", 2, ImGuiTableFlags.SizingFixedFit)) {
-			ImGui.TableNextRow();
-			ImGui.TableNextColumn();
-			ImGui.Text("Map");
 
-			ImGui.TableNextColumn();
-			using (var disabled = ImRaii.Disabled(Plugin.ClientState.LocalPlayer == null)) {
-				if (ImGuiComponents.IconButton("SetWaypoint", FontAwesomeIcon.MapMarkerAlt)) {
-					group.MapId = Plugin.ClientState.MapId;
-					Configuration.Save();
-				}
+		using (var disabled = ImRaii.Disabled(Plugin.ClientState.LocalPlayer == null)) {
+			if (ImGuiComponents.IconButton("SetWaypoint", FontAwesomeIcon.MapMarkerAlt)) {
+				group.MapId = Plugin.ClientState.MapId;
+				Configuration.Save();
+			}
+		}
+		ImGui.SameLine();
+		ImGui.Text($"{group.MapName}");
+
+		using (var disabled = ImRaii.Disabled(Plugin.ClientState.LocalPlayer == null)) {
+			if (ImGuiComponents.IconButton("SetGearset", FontAwesomeIcon.Tshirt)) {
+				group.LinkedGearset = Services.GearsetService.GetEquippedGearsetName();
+				Configuration.Save();
+			}
+		}
+		ImGui.SameLine();
+		ImGui.Text($"{group.LinkedGearset}");
+
+		if (group.Uptime.Count == 0) {
+			if (ImGuiComponents.IconButton("Add time range", FontAwesomeIcon.Clock)) {
+				group.Uptime.Add(new EorzeaTimeRange());
+				Configuration.Save();
 			}
 			ImGui.SameLine();
-			ImGui.Text($"{group.MapName}");
+			ImGui.Text($"Always up");
+		} else {
+			for (var u = 0; u < group.Uptime.Count; u++) {
+				var uptime = group.Uptime[u];
 
-			ImGui.TableNextRow();
-			ImGui.TableNextColumn();
-			ImGui.Text("Nodes");
-			ImGui.TableNextColumn();
-
-			for (var j = 0; j < group.GatheringNodes.Count; ++j) {
-				var node = group.GatheringNodes[j];
-				var isRunningNode = isRunningGroup && RouteManager.CurrentNodeIndex == j;
-				if (ImGuiComponents.IconButton($"Remove_{j}", FontAwesomeIcon.Times)) {
-					group.GatheringNodes.RemoveAt(j);
+				if (ImGuiComponents.IconButton($"RemoveUptime_{u}", FontAwesomeIcon.Times)) {
+					group.Uptime.Remove(uptime);
 					Configuration.Save();
 				}
 				ImGui.SameLine();
-				using var color = ImRaii.PushColor(ImGuiCol.Text, activeColor, isRunningNode);
-				ImGui.Text($"{node.DataId:X} (x{node.Positions.Count})");
-			}
 
-			if (group.MapId == Plugin.ClientState.MapId) {
-				var targetDataId = Plugin.ClientState.LocalPlayer?.TargetObject?.DataId ?? 0;
-				var targetPoints = targetDataId == 0 ? [] : Plugin.ObjectTable.Where(obj => obj.DataId == targetDataId).ToList();
-				using (var disabled = ImRaii.Disabled(targetDataId == 0 || group.GatheringNodes.Any(node => node.DataId == targetDataId))) {
-					if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Crosshairs, targetDataId == 0 ? "Add node" : $"Add {targetDataId:X} (x{targetPoints.Count})")) {
-						group.GatheringNodes.Add(new() {
-							DataId = targetDataId,
-							Positions = targetPoints.Select(p => p.Position).ToList(),
-						});
-						Configuration.Save();
-					}
+				using var style = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, Vector2.One * 2 * ImGuiHelpers.GlobalScale);
+				using var color = ImRaii.PushColor(ImGuiCol.Text, activeColor, group.WithinUptime(Services.TimeService.EorzeaTime));
+				DrawTimeInput($"##UptimeStart_{u}", 20 * ImGuiHelpers.GlobalScale, uptime.Start, v => {
+					uptime.Start = v;
+					Configuration.Save();
+				});
+				ImGui.SameLine();
+				ImGui.Text("-");
+				ImGui.SameLine();
+				DrawTimeInput($"##UptimeEnd_{u}", 20 * ImGuiHelpers.GlobalScale, uptime.End, v => {
+					uptime.End = v;
+					Configuration.Save();
+				});
+				ImGui.SameLine();
+				ImGui.Text(" ET");
+			}
+			if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Clock, "Add time range")) {
+				group.Uptime.Add(new EorzeaTimeRange());
+				Configuration.Save();
+			}
+		}
+
+		if (ImGuiComponents.IconButton("ToggleRepeat", FontAwesomeIcon.Repeat)) {
+			group.Repeat = !group.Repeat;
+			Configuration.Save();
+		}
+		ImGui.SameLine();
+		ImGui.Text(!group.Repeat ? "No repeat" :
+			group.Uptime == null ? "Repeat forever" :
+			$"Repeat during uptime");
+
+		if (ImGuiComponents.IconButton("Item", FontAwesomeIcon.ShoppingBag)) {
+			// todo
+		}
+		ImGui.SameLine();
+		ImGui.Text("No item selected");
+
+		if (ImGuiComponents.IconButton("Rotation", FontAwesomeIcon.Tasks)) {
+			ImGui.OpenPopup("RotationPopup");
+		}
+		using (var popup = ImRaii.Popup("RotationPopup")) {
+			if (popup) {
+				if (ImGui.MenuItem("External")) {
+				}
+				if (ImGui.MenuItem("Max yield")) {
+				}
+				if (ImGui.MenuItem("Max attempts")) {
+				}
+				if (ImGui.MenuItem("No GP")) {
+				}
+				if (ImGui.MenuItem("Ephemeral nodes")) {
+				}
+				if (ImGui.MenuItem("Legendary nodes")) {
+				}
+				if (ImGui.MenuItem("Crystals")) {
+				}
+			}
+		}
+		ImGui.SameLine();
+		ImGui.Text("External rotation");
+
+		ImGui.TableNextColumn();
+
+		for (var j = 0; j < group.GatheringNodes.Count; ++j) {
+			var node = group.GatheringNodes[j];
+			var isRunningNode = isRunningGroup && RouteManager.CurrentNodeIndex == j;
+			if (ImGuiComponents.IconButton($"Start_{j}", FontAwesomeIcon.Play)) {
+				RouteManager.Start(activeRoute, i, j);
+			}
+			ImGui.SameLine();
+			using var color = ImRaii.PushColor(ImGuiCol.Text, activeColor, isRunningNode);
+			ImGui.Text($"{node.DataId:X} (x{node.Positions.Count})");
+			ImGui.SameLine();
+			if (ImGuiComponents.IconButton($"Remove_{j}", FontAwesomeIcon.Times)) {
+				group.GatheringNodes.RemoveAt(j);
+				Configuration.Save();
+			}
+		}
+
+		if (group.MapId == Plugin.ClientState.MapId) {
+			var targetDataId = Plugin.ClientState.LocalPlayer?.TargetObject?.DataId ?? 0;
+			var targetPoints = targetDataId == 0 ? [] : Plugin.ObjectTable.Where(obj => obj.DataId == targetDataId).ToList();
+			using (var disabled = ImRaii.Disabled(targetDataId == 0 || group.GatheringNodes.Any(node => node.DataId == targetDataId))) {
+				if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Crosshairs, targetDataId == 0 ? "Add node" : $"Add {targetDataId:X} (x{targetPoints.Count})")) {
+					group.GatheringNodes.Add(new() {
+						DataId = targetDataId,
+						Positions = targetPoints.Select(p => p.Position).ToList(),
+					});
+					Configuration.Save();
 				}
 			}
 		}
 	}
 
+	private static void DrawTimeInput(string label, float width, EorzeaTime value, Action<EorzeaTime> onChange) {
+		var hour = value.Hour;
+		var minute = value.Minute;
+
+		using var id = ImRaii.PushId(label);
+		var changed = false;
+
+		using var style = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, Vector2.One * 2 * ImGuiHelpers.GlobalScale);
+		ImGui.SetNextItemWidth(width);
+		changed |= ImGui.DragInt("##hour", ref hour, 0.05f, 0, 23, "%02d", ImGuiSliderFlags.AlwaysClamp);
+		ImGui.SameLine();
+		ImGui.Text(":");
+		ImGui.SameLine();
+		ImGui.SetNextItemWidth(width);
+		changed |= ImGui.DragInt("##minute", ref minute, 0.2f, 0, 59, "%02d", ImGuiSliderFlags.AlwaysClamp);
+
+		if (changed) {
+			onChange(new EorzeaTime(hour, minute));
+		}
+	}
+
 	private string debugDataId = "";
-	private void DrawDebugTab() {
+	private unsafe void DrawDebugTab() {
 		ImGui.Text("Debug");
 
 		var id = debugDataId;
@@ -280,5 +395,13 @@ public class RoutesWindow : Window, IDisposable {
 			var xydist = vec.Length();
 			ImGui.Text($"XZ Distance to target: {xydist}");
 		}
+
+		ImGui.Text($"Player position: {Plugin.ClientState.LocalPlayer!.Position}");
+
+		ImGui.Text($"Eorzea time: {Services.TimeService.EorzeaTimeRaw}");
+	}
+
+	private static float MarkerToWorldCoord(float coord, float scale, float offset) {
+		return ((coord - 1024f) / (scale / 100f)) - (offset * (scale / 100f));
 	}
 }

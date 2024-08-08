@@ -3,28 +3,30 @@ using System;
 namespace TwelvesBounty.Data;
 
 [Serializable]
-public class EorzeaTime(long value = 0) {
-	public long Value { get; set; } = value;
-	public DateTime DateTime {
-		get {
-			var h = Value / 3600 % 24;
-			var m = Value / 60 % 60;
-			var s = Value % 60;
-			return new DateTime(1, 1, 1, (int)h, (int)m, (int)s);
-		}
-
-		set {
-			Value = (value.Hour * 3600) +
-				(value.Minute * 60) +
-				value.Second;
-		}
+public class EorzeaTime {
+	public EorzeaTime(long value = 0) {
+		Milliseconds = value;
 	}
 
+	public EorzeaTime(int hour, int minute) {
+		Milliseconds = (hour * 60 * 60 * 1000) +
+			(minute * 60 * 1000);
+	}
+
+	public long Milliseconds { get; set; }
+
+	public int Hour { get => (int)Milliseconds / (60 * 60 * 1000); }
+	public int Minute { get => (int)Milliseconds / (60 * 1000) % 60; }
+
 	public long TimeUntil(EorzeaTime target) {
-		var targetValue = target.Value;
-		if (Value > target.Value) {
-			targetValue += 24 * 60 * 60;
+		var result = target.Milliseconds - Milliseconds;
+		while (result < 0) {
+			result += 24 * 60 * 60 * 1000;
 		}
-		return targetValue - Value;
+		return result;
+	}
+
+	public override string ToString() {
+		return $"{Hour:D2}:{Minute:D2}";
 	}
 }

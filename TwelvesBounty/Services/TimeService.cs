@@ -5,8 +5,17 @@ namespace TwelvesBounty.Services {
 	public unsafe class TimeService {
 		public EorzeaTime EorzeaTime {
 			get {
+				return new EorzeaTime(EorzeaTimeRaw * 1000 % (24 * 60 * 60 * 1000));
+			}
+		}
+
+		public long EorzeaTimeRaw {
+			get {
 				var framework = Framework.Instance();
-				return new EorzeaTime(framework == null ? 0 : framework->ClientTime.EorzeaTime);
+				if (framework == null) return 0;
+
+				var seconds = framework->ClientTime.EorzeaTime;
+				return seconds;
 			}
 		}
 	}

@@ -1,6 +1,8 @@
 using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using TwelvesBounty.IPC;
 
@@ -32,6 +34,36 @@ namespace TwelvesBounty.Services {
 			return true;
 		}
 
+		private readonly List<uint> aetheryteBlacklist = [
+			173, // Tertium
+		];
+
+		public uint? GetNearestAetheryte(uint mapId, Vector3 point) {
+			var aetheryteSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.Aetheryte>()!;
+			var mapSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.Map>()!;
+			var mapMarkerSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.MapMarker>()!;
+
+			var mapRow = mapSheet.GetRow(mapId) ?? throw new InvalidOperationException($"Invalid map id {mapId}");
+			var aetherytes = aetheryteSheet.Where(a =>
+				a.IsAetheryte &&
+				a.RowId > 1 &&
+				a.Territory.Value?.Map.Row == mapId &&
+				!aetheryteBlacklist.Contains(a.RowId));
+			var nearest = aetherytes
+				.OrderBy(aetheryte => {
+					var marker = mapMarkerSheet.FirstOrDefault(m => m.DataType == 3 && m.DataKey == aetheryte.RowId) ??
+						throw new InvalidOperationException($"Could not find map marker for {aetheryte.RowId}");
+					var position = new Vector3(
+						MarkerToWorldCoordinate(marker.X, mapRow.SizeFactor, mapRow.OffsetX),
+						0,
+						MarkerToWorldCoordinate(marker.Y, mapRow.SizeFactor, mapRow.OffsetY)
+					);
+					return (position - point).LengthSquared();
+				})
+				.First();
+			return nearest.RowId;
+		}
+
 		public unsafe void Teleport(uint aetheryteId) {
 			var telepo = Telepo.Instance();
 			if (telepo == null) {
@@ -47,6 +79,7 @@ namespace TwelvesBounty.Services {
 			var end = telepo->TeleportList.Last;
 			for (var p = telepo->TeleportList.First; p != end; ++p) {
 				if (p->AetheryteId == aetheryteId) {
+					Plugin.PluginLog.Debug($"Teleporting to {aetheryteId}");
 					telepo->Teleport(aetheryteId, 0);
 					return;
 				}
@@ -71,6 +104,10 @@ namespace TwelvesBounty.Services {
 				return objPosition;
 			}
 			return position.Value;
+		}
+
+		private static float MarkerToWorldCoordinate(float coord, float scale, float offset) {
+			return ((coord - 1024f) / (scale / 100f)) - (offset * (scale / 100f));
 		}
 	}
 }
