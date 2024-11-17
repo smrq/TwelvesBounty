@@ -61,20 +61,20 @@ namespace TwelvesBounty.Services {
 		];
 
 		public uint? GetNearestAetheryte(uint mapId, Vector3 point) {
-			var aetheryteSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.Aetheryte>()!;
-			var mapSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.Map>()!;
-			var mapMarkerSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.MapMarker>()!;
+			var aetheryteSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Aetheryte>();
+			var mapSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Map>();
+			var mapMarkerSheet = Plugin.DataManager.GetSubrowExcelSheet<Lumina.Excel.Sheets.MapMarker>();
 
-			var mapRow = mapSheet.GetRow(mapId) ?? throw new InvalidOperationException($"Invalid map id {mapId}");
+			var mapRow = mapSheet.GetRow(mapId);
 			var aetherytes = aetheryteSheet.Where(a =>
 				a.IsAetheryte &&
 				a.RowId > 1 &&
-				a.Territory.Value?.Map.Row == mapId &&
+				a.Territory.Value.Map.RowId == mapId &&
 				!aetheryteBlacklist.Contains(a.RowId));
 			var nearest = aetherytes
 				.OrderBy(aetheryte => {
-					var marker = mapMarkerSheet.FirstOrDefault(m => m.DataType == 3 && m.DataKey == aetheryte.RowId) ??
-						throw new InvalidOperationException($"Could not find map marker for {aetheryte.RowId}");
+					var marker = mapMarkerSheet.SelectMany(m => m).FirstOrDefault(m => m.DataType == 3 && m.DataKey.RowId == aetheryte.RowId);
+					// ?? throw new InvalidOperationException($"Could not find map marker for {aetheryte.RowId}");
 					var position = new Vector3(
 						MarkerToWorldCoordinate(marker.X, mapRow.SizeFactor, mapRow.OffsetX),
 						0,

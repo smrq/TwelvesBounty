@@ -1,4 +1,4 @@
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,7 +19,7 @@ namespace TwelvesBounty.Data {
 			get {
 				var mapSheet = Plugin.DataManager.GetExcelSheet<Map>()!;
 				var map = mapSheet.GetRow(MapId);
-				return map?.PlaceName.Value?.Name ?? string.Empty;
+				return map.PlaceName.Value.Name.ExtractText();
 			}
 		}
 

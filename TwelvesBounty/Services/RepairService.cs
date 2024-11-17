@@ -1,7 +1,7 @@
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -44,22 +44,24 @@ namespace TwelvesBounty.Services {
 		private bool CanRepairItem(uint itemId) {
 			var itemSheet = Plugin.DataManager.GetExcelSheet<Item>()!;
 			var classJobSheet = Plugin.DataManager.GetExcelSheet<ClassJob>()!;
-			
-			var itemRow = itemSheet.GetRow(itemId) ?? throw new InvalidOperationException($"Invalid item id {itemId}");
 
-			var jobId = itemRow.ClassJobRepair.Row;
+			var itemRow = itemSheet.GetRow(itemId);
+			// ?? throw new InvalidOperationException($"Invalid item id {itemId}");
+
+			var jobId = itemRow.ClassJobRepair.RowId;
 			if (jobId == 0) {
 				return false;
 			}
 
-			var jobRow = classJobSheet.GetRow(itemRow.ClassJobRepair.Row) ?? throw new InvalidOperationException($"Invalid job id {jobId}");
+			var jobRow = classJobSheet.GetRow(itemRow.ClassJobRepair.RowId);
+			// ?? throw new InvalidOperationException($"Invalid job id {jobId}");
 			var jobLevel = PlayerState.Instance()->ClassJobLevels[jobRow.ExpArrayIndex];
 			if (Math.Max(itemRow.LevelEquip - 10, 1) > jobLevel) {
 				return false;
 			}
 
 			var repairItem = itemRow.ItemRepair.Value!.Item;
-			if (!HasDarkMatter(repairItem.Row)) {
+			if (!HasDarkMatter(repairItem.RowId)) {
 				return false;
 			}
 
@@ -69,8 +71,8 @@ namespace TwelvesBounty.Services {
 		private bool HasDarkMatter(uint minimumId) {
 			var repairSheet = Plugin.DataManager.GetExcelSheet<ItemRepairResource>()!;
 			return repairSheet.Any(row =>
-				row.Item.Row >= minimumId &&
-				InventoryManager.Instance()->GetInventoryItemCount(row.Item.Row) > 0
+				row.Item.RowId >= minimumId &&
+				InventoryManager.Instance()->GetInventoryItemCount(row.Item.RowId) > 0
 			);
 		}
 
@@ -128,7 +130,7 @@ namespace TwelvesBounty.Services {
 
 			var resNode = addon->RepairAllButton->OwnerNode->AtkResNode;
 			var e = resNode.AtkEventManager.Event;
-			addon->ReceiveEvent(e->Type, (int)e->Param, e);
+			addon->ReceiveEvent(e->State.EventType, (int)e->Param, e);
 			return true;
 		}
 	}

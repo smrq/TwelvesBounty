@@ -1,5 +1,6 @@
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.Interop;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -50,8 +51,8 @@ namespace TwelvesBounty.Services {
 			if ((item->Flags & InventoryItem.ItemFlags.Collectable) == 0) {
 				return false;
 			}
-			var itemSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.Item>()!;
-			var itemRow = itemSheet.GetRow(item->ItemId) ?? throw new InvalidOperationException($"Invalid item id {item->ItemId}");
+			var itemSheet = Plugin.DataManager.GetExcelSheet<Item>()!;
+			var itemRow = itemSheet.GetRow(item->ItemId);
 			return itemRow.AetherialReduce > 0;
 		}
 	}

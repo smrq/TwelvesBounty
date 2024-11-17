@@ -3,7 +3,6 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.Json.Nodes;
 using TwelvesBounty.Data;
 
 namespace TwelvesBounty;
@@ -11,6 +10,7 @@ namespace TwelvesBounty;
 [Serializable]
 public class Configuration : IPluginConfiguration {
 	public int Version { get; set; } = 1;
+	public bool IsOpen { get; set; } = false;
 	public List<Route> Routes { get; set; } = [];
 	public float WaypointRadius { get; set; } = 25.0f;
 	public float NodeRadius { get; set; } = 1.0f;

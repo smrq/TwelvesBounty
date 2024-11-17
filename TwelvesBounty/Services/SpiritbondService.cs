@@ -94,7 +94,7 @@ namespace TwelvesBounty.Services {
 
 			var resNode = addon->YesButton->OwnerNode->AtkResNode;
 			var e = resNode.AtkEventManager.Event;
-			addon->ReceiveEvent(e->Type, (int)e->Param, e);
+			addon->ReceiveEvent(e->State.EventType, (int)e->Param, e);
 			return true;
 		}
 

@@ -35,6 +35,18 @@ public class RoutesWindow : Window, IDisposable {
 	public void Dispose() {
 	}
 
+	public override void OnOpen() {
+		base.OnOpen();
+		Configuration.IsOpen = true;
+		Configuration.Save();
+	}
+
+	public override void OnClose() {
+		base.OnClose();
+		Configuration.IsOpen = false;
+		Configuration.Save();
+	}
+
 	public override void Draw() {
 		using var tabs = ImRaii.TabBar("MainTabs");
 		if (tabs) {
@@ -295,12 +307,12 @@ public class RoutesWindow : Window, IDisposable {
 		if (group.ItemId == 0) {
 			ImGui.Text("No item selected");
 		} else {
-			var itemSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.Item>()!;
-			var itemRow = itemSheet.GetRow(group.ItemId);
-			if (itemRow == null) {
+			var itemSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Item>()!;
+			try {
+				var itemRow = itemSheet.GetRow(group.ItemId);
+				ImGui.Text(itemRow.Name.ExtractText());
+			} catch {
 				ImGui.Text("Invalid item id");
-			} else {
-				ImGui.Text(itemRow.Name);
 			}
 		}
 

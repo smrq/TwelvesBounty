@@ -48,7 +48,7 @@ public sealed class Plugin : IDalamudPlugin {
 
 		Framework.Update += (IFramework framework) => RouteManager.Update();
 
-		ToggleRoutesWindow();
+		RoutesWindow.IsOpen = Configuration.IsOpen;
 	}
 
 	public void Dispose() {
