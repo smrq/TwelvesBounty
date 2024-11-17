@@ -10,6 +10,7 @@ using TwelvesBounty.Windows;
 namespace TwelvesBounty;
 
 public sealed class Plugin : IDalamudPlugin {
+	[PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
 	[PluginService] internal static IAetheryteList AetheryteList { get; private set; } = null!;
 	[PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
 	[PluginService] internal static ICondition Condition { get; private set; } = null!;
@@ -52,10 +53,10 @@ public sealed class Plugin : IDalamudPlugin {
 
 	public void Dispose() {
 		WindowSystem.RemoveAllWindows();
+		CommandManager.RemoveHandler(CommandName);
 
 		RoutesWindow.Dispose();
-
-		CommandManager.RemoveHandler(CommandName);
+		Services.Dispose();
 	}
 
 	private void OnCommand(string command, string args) {

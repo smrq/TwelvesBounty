@@ -10,6 +10,7 @@ namespace TwelvesBounty.Data {
 		public uint MapId { get; set; } = 0;
 		public List<GatheringNode> GatheringNodes { get; set; } = [];
 		public string LinkedGearset { get; set; } = string.Empty;
+		public uint ItemId { get; set; } = 0;
 		public List<EorzeaTimeRange> Uptime { get; set; } = [];
 		public bool Repeat { get; set; } = false;
 
@@ -22,8 +23,8 @@ namespace TwelvesBounty.Data {
 			}
 		}
 
-		public bool WithinUptime(EorzeaTime time) {
-			return Uptime.Count == 0 || Uptime.Any(u => u.Contains(time));
+		public bool WithinUptime(EorzeaTime time, uint spawnDelay = 0) {
+			return Uptime.Count == 0 || Uptime.Any(u => u.Contains(time, spawnDelay));
 		}
 
 		public long TimeUntilUptime(EorzeaTime time) {

@@ -1,6 +1,7 @@
 using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -10,6 +11,27 @@ namespace TwelvesBounty.Services {
 	public class NavigationService(ActionService actionService, NavmeshIPC navmeshIPC) {
 		private readonly ActionService actionService = actionService;
 		private readonly NavmeshIPC navmeshIPC = navmeshIPC;
+
+		public IEnumerable ExecutePathfindTask(Vector3 point, bool fly) {
+			// navmesh doesn't seem to execute when diving and not mounted, idk
+			var flyOrDive = fly || Plugin.Condition[ConditionFlag.Diving];
+
+			while (true) {
+				if (flyOrDive && !Plugin.Condition[ConditionFlag.Mounted]) {
+					actionService.MountChocobo();
+					yield return null;
+				} else if (fly && !Plugin.Condition[ConditionFlag.InFlight] && !Plugin.Condition[ConditionFlag.Diving]) {
+					actionService.Jump();
+					yield return null;
+				} else if (!navmeshIPC.IsReady()) {
+					// wait for navmesh ready
+					yield return null;
+				} else {
+					navmeshIPC.PathfindAndMoveTo(point, flyOrDive);
+					yield break;
+				}
+			}
+		}
 
 		public bool ExecutePathfind(Vector3 point, bool fly) {
 			// navmesh doesn't seem to execute when diving and not mounted, idk

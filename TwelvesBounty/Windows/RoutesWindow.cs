@@ -32,7 +32,8 @@ public class RoutesWindow : Window, IDisposable {
 		Services = services;
 	}
 
-	public void Dispose() { }
+	public void Dispose() {
+	}
 
 	public override void Draw() {
 		using var tabs = ImRaii.TabBar("MainTabs");
@@ -287,10 +288,21 @@ public class RoutesWindow : Window, IDisposable {
 			$"Repeat during uptime");
 
 		if (ImGuiComponents.IconButton("Item", FontAwesomeIcon.ShoppingBag)) {
-			// todo
+			group.ItemId = Services.GatheringService.LastGatheredId;
+			Configuration.Save();
 		}
 		ImGui.SameLine();
-		ImGui.Text("No item selected");
+		if (group.ItemId == 0) {
+			ImGui.Text("No item selected");
+		} else {
+			var itemSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.Item>()!;
+			var itemRow = itemSheet.GetRow(group.ItemId);
+			if (itemRow == null) {
+				ImGui.Text("Invalid item id");
+			} else {
+				ImGui.Text(itemRow.Name);
+			}
+		}
 
 		if (ImGuiComponents.IconButton("Rotation", FontAwesomeIcon.Tasks)) {
 			ImGui.OpenPopup("RotationPopup");
@@ -399,6 +411,23 @@ public class RoutesWindow : Window, IDisposable {
 		ImGui.Text($"Player position: {Plugin.ClientState.LocalPlayer!.Position}");
 
 		ImGui.Text($"Eorzea time: {Services.TimeService.EorzeaTimeRaw}");
+
+		ImGui.Text($"Gatherables:");
+		foreach (var gid in Services.GatheringService.Debug) {
+			ImGui.SameLine();
+			ImGui.Text($"  {gid}");
+		}
+
+		ImGui.Text("Gather #");
+		for (var i = 0; i < 8; ++i) {
+			ImGui.SameLine();
+			if (ImGui.Button($"{i}##gather")) {
+				Services.GatheringService.GatherIndex(i);
+			}
+		}
+
+		ImGui.Text($"{Services.InventoryService.EmptySlots} inventory slots free");
+		ImGui.Text($"{Services.InventoryService.ReducibleItems.Count()} reducible items");
 	}
 
 	private static float MarkerToWorldCoord(float coord, float scale, float offset) {

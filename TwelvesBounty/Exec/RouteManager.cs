@@ -15,14 +15,17 @@ namespace TwelvesBounty.Exec {
 		private const int DismountTime = 500;
 		private const int TeleportInitTime = 6000;
 		private const int BetweenAreasTime = 1500;
+		private const int NodeSpawnTime = 1000 * 60 * 5; // in Eorzean milliseconds
 
 		public enum RouteStateEnum {
 			Idle,
 			Begin,
 			BeginGroup,
 			BeginNode,
+			ExtractMateria,
+			RepairGear,
+			AethericReduction,
 			ApproachNodeApprox,
-			AwaitingUptime,
 			ApproachNode,
 			InteractNode,
 			EndNode,
@@ -44,9 +47,9 @@ namespace TwelvesBounty.Exec {
 		public Vector3? TargetPosition { get; set; } = null;
 		public bool WaitingForUptime { get; set; } = false;
 		public RouteStateEnum State { get; set; } = RouteStateEnum.Idle;
-		public DateTime Timeout { get; set; } = DateTime.MinValue;
 
 		private ServiceInstances Services { get; init; } = services;
+		private TaskQueue TaskQueue { get; init; } = new TaskQueue();
 
 		public void Start(Route route) {
 			if (route.Groups.Count == 0) {
@@ -89,20 +92,25 @@ namespace TwelvesBounty.Exec {
 			WaitingForUptime = false;
 			State = RouteStateEnum.Idle;
 
-			if (Services.NavmeshIPC.IsRunning()) {
+			if (Services.NavmeshIPC.IsRunning() || Services.NavmeshIPC.PathfindInProgress()) {
 				Services.NavmeshIPC.Stop();
 			}
+
+			TaskQueue.Clear();
 		}
 
 		public void Update() {
-			if (Plugin.Condition[ConditionFlag.BetweenAreas]) {
-				var t = DateTime.Now.AddMilliseconds(BetweenAreasTime);
-				if (t > Timeout) {
-					Timeout = t;
-				}
+			if (TaskQueue.HasTask) {
+				TaskQueue.Execute();
+				return;
 			}
 
-			if (Services.ActionService.IsPlayerBusy || DateTime.Now < Timeout) {
+			if (Services.ActionService.IsPlayerBusy) {
+				return;
+			}
+
+			if (Plugin.Condition[ConditionFlag.BetweenAreas]) {
+				TaskQueue.Add(TaskQueue.Idle(BetweenAreasTime));
 				return;
 			}
 
@@ -112,7 +120,6 @@ namespace TwelvesBounty.Exec {
 				RouteStateEnum.BeginGroup => BeginGroupState(),
 				RouteStateEnum.BeginNode => BeginNodeState(),
 				RouteStateEnum.ApproachNodeApprox => ApproachNodeApproxState(),
-				RouteStateEnum.AwaitingUptime => AwaitingUptimeState(),
 				RouteStateEnum.ApproachNode => ApproachNodeState(),
 				RouteStateEnum.InteractNode => InteractNodeState(),
 				RouteStateEnum.EndNode => EndNodeState(),
@@ -161,7 +168,7 @@ namespace TwelvesBounty.Exec {
 				Plugin.PluginLog.Debug($"{Plugin.ClientState.MapId} -> {mapId}");
 
 				Services.NavigationService.Teleport(aetheryteId.Value);
-				Timeout = DateTime.Now.AddMilliseconds(TeleportInitTime);
+				TaskQueue.Add(TaskQueue.Idle(TeleportInitTime));
 				Status = "Teleporting...";
 				return ExecutionEnum.Yield;
 			}
@@ -172,11 +179,21 @@ namespace TwelvesBounty.Exec {
 				return ExecutionEnum.Yield;
 			}
 
-			// TODO check for repair
-			// TODO check for spiritbond
+			if (Services.RepairService.CanRepair) {
+				TaskQueue.Add(Services.RepairService.RepairTask());
+				Status = "Repairing equipment...";
+				return ExecutionEnum.Yield;
+			}
+			
+			if (Services.SpiritbondService.IsEquippedSpiritbondReady) {
+				TaskQueue.Add(Services.SpiritbondService.ExtractMateriaTask());
+				Status = "Extracting materia...";
+				return ExecutionEnum.Yield;
+			}
+
 			// TODO check for aetheric reduction
 
-			TargetPosition = node.AveragePosition;
+			TargetPosition = Services.NavigationService.GetInteractPosition(node.AveragePosition, InteractRadius);
 			ChangeState(RouteStateEnum.ApproachNodeApprox);
 			return ExecutionEnum.Continue;
 		}
@@ -185,7 +202,7 @@ namespace TwelvesBounty.Exec {
 			var group = Route!.Groups[CurrentGroupIndex];
 			var node = group.GatheringNodes[CurrentNodeIndex];
 
-			if (!group.WithinUptime(Services.TimeService.EorzeaTime) && !WaitingForUptime) {
+			if (!WaitingForUptime && !group.WithinUptime(Services.TimeService.EorzeaTime)) {
 				if (Services.NavmeshIPC.IsRunning() || Services.NavmeshIPC.PathfindInProgress()) {
 					Services.NavmeshIPC.Stop();
 				}
@@ -220,26 +237,15 @@ namespace TwelvesBounty.Exec {
 				ChangeState(RouteStateEnum.ApproachNode);
 				return ExecutionEnum.Continue;
 			} else {
-				if (!group.WithinUptime(Services.TimeService.EorzeaTime) && WaitingForUptime) {
-					ChangeState(RouteStateEnum.AwaitingUptime);
-					return ExecutionEnum.Continue;
+				if (WaitingForUptime && !group.WithinUptime(Services.TimeService.EorzeaTime, NodeSpawnTime)) {
+					Status = "Waiting for node to spawn...";
+					return ExecutionEnum.Yield;
 				}
+
 				Plugin.PluginLog.Debug($"Node {node.DataId:X}(#{CurrentGroupIndex}.{CurrentNodeIndex}) is down");
 				ChangeState(RouteStateEnum.EndNode);
 				return ExecutionEnum.Continue;
 			}
-		}
-
-		private ExecutionEnum AwaitingUptimeState() {
-			var group = Route!.Groups[CurrentGroupIndex];
-			if (group.WithinUptime(Services.TimeService.EorzeaTime)) {
-				WaitingForUptime = false;
-				ChangeState(RouteStateEnum.ApproachNodeApprox);
-				return ExecutionEnum.Continue;
-			}
-
-			Status = "Waiting for node to spawn...";
-			return ExecutionEnum.Yield;
 		}
 
 		private ExecutionEnum ApproachNodeState() {
@@ -281,7 +287,7 @@ namespace TwelvesBounty.Exec {
 			
 			if (Plugin.Condition[ConditionFlag.Mounted]) {
 				Services.ActionService.Dismount();
-				Timeout = DateTime.Now.AddMilliseconds(DismountTime);
+				TaskQueue.Add(TaskQueue.Idle(DismountTime));
 				Status = "Dismounting...";
 				return ExecutionEnum.Yield;
 			}
@@ -304,8 +310,7 @@ namespace TwelvesBounty.Exec {
 
 		private ExecutionEnum EndGroupState() {
 			var group = Route!.Groups[CurrentGroupIndex];
-			var withinUptime = group.WithinUptime(Services.TimeService.EorzeaTime);
-			if (group.Repeat && withinUptime) {
+			if (group.Repeat && group.WithinUptime(Services.TimeService.EorzeaTime)) {
 				if (GatheredThisLoop) {
 					CurrentNodeIndex = 0;
 					GatheredThisLoop = false;
