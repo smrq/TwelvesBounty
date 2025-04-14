@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -13,7 +14,7 @@ namespace TwelvesBounty.Services {
 			get {
 				var items = InventoryManager.Instance()->GetInventoryContainer(InventoryType.EquippedItems)->Items;
 				return Enumerable.Range(0, 13)
-					.Select(n => items[n].Spiritbond)
+					.Select(n => items[n].SpiritbondOrCollectability)
 					.ToList();
 			}
 		}
@@ -24,19 +25,22 @@ namespace TwelvesBounty.Services {
 
 		public IEnumerable ExtractMateriaTask() {
 			while (IsEquippedSpiritbondReady) {
-				if (!IsMaterializeOpen) {
-					Throttle.ExecuteConditional(throttle, () => {
-						OpenMaterialize();
-					});
+				if (Plugin.Condition[ConditionFlag.Occupied39]) {
+					// Currently extracting
 					yield return null;
 				} else if (IsMaterializeDialogOpen) {
 					Throttle.ExecuteConditional(throttle, () => {
 						ConfirmMaterializeDialog();
 					});
 					yield return null;
-				} else {
+				} else if (IsMaterializeOpen) {
 					Throttle.ExecuteConditional(throttle, () => {
 						ExtractFirstMateria();
+					});
+					yield return null;
+				} else {
+					Throttle.ExecuteConditional(throttle, () => {
+						OpenMaterialize();
 					});
 					yield return null;
 				}
@@ -89,6 +93,7 @@ namespace TwelvesBounty.Services {
 		private bool ConfirmMaterializeDialog() {
 			var addon = (AddonMaterializeDialog*)Plugin.GameGui.GetAddonByName("MaterializeDialog");
 			if (addon == null) return false;
+			if (!addon->IsVisible) return false;
 
 			if (!addon->YesButton->IsEnabled) return false;
 
@@ -101,6 +106,7 @@ namespace TwelvesBounty.Services {
 		private bool ExtractFirstMateria() {
 			var addon = (AtkUnitBase*)Plugin.GameGui.GetAddonByName("Materialize");
 			if (addon == null) return false;
+			if (!addon->IsVisible) return false;
 
 			var values = stackalloc AtkValue[1] {
 					new() {

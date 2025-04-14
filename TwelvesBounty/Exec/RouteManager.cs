@@ -1,6 +1,7 @@
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Utility;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using System;
 using System.Linq;
 using System.Numerics;
@@ -15,7 +16,7 @@ namespace TwelvesBounty.Exec {
 		private const int DismountTime = 500;
 		private const int TeleportInitTime = 6000;
 		private const int BetweenAreasTime = 1500;
-		private const int NodeSpawnTime = 1000 * 60 * 5; // in Eorzean milliseconds
+		private const int NodeSpawnTime = 1000 * 60 * 15; // in Eorzean milliseconds
 
 		public enum RouteStateEnum {
 			Idle,
@@ -105,12 +106,23 @@ namespace TwelvesBounty.Exec {
 				return;
 			}
 
-			if (Services.ActionService.IsPlayerBusy) {
+			if (Plugin.Condition[ConditionFlag.BetweenAreas]) {
+				TaskQueue.Add(TaskQueue.Idle(BetweenAreasTime));
 				return;
 			}
 
-			if (Plugin.Condition[ConditionFlag.BetweenAreas]) {
-				TaskQueue.Add(TaskQueue.Idle(BetweenAreasTime));
+			if (Services.ActionService.IsPlayerBusyExcept([ConditionFlag.Gathering])) {
+				return;
+			}
+
+			if (!Services.ActionService.IsPlayerBusy &&
+				Route != null &&
+				Plugin.ClientState.LocalPlayer!.CurrentGp < Route!.UseCordialBelow &&
+				Plugin.ClientState.LocalPlayer!.MaxGp > 0 &&
+				Services.ActionService.IsHiCordialReady
+			) {
+				Services.ActionService.UseHiCordial();
+				Status = "Using Hi-Cordial...";
 				return;
 			}
 
@@ -191,7 +203,11 @@ namespace TwelvesBounty.Exec {
 				return ExecutionEnum.Yield;
 			}
 
-			// TODO check for aetheric reduction
+			if (Services.InventoryService.ReducibleItems.Count > 0) {
+				TaskQueue.Add(Services.InventoryService.ReduceTask());
+				Status = "Reducing items...";
+				return ExecutionEnum.Yield;
+			}
 
 			TargetPosition = Services.NavigationService.GetInteractPosition(node.AveragePosition, InteractRadius);
 			ChangeState(RouteStateEnum.ApproachNodeApprox);
@@ -278,13 +294,20 @@ namespace TwelvesBounty.Exec {
 		}
 
 		private ExecutionEnum InteractNodeState() {
-			// TODO use cordials
+			var group = Route!.Groups[CurrentGroupIndex];
+
 			if (!TargetNode!.IsTargetable) {
 				GatheredThisLoop = true;
 				ChangeState(RouteStateEnum.EndNode);
 				return ExecutionEnum.Continue;
 			}
-			
+
+			if (Plugin.Condition[ConditionFlag.Gathering]) {
+				Services.GatheringService.Gather(group.ItemId, group.RotationType);
+				Status = "Gathering...";
+				return ExecutionEnum.Yield;
+			}
+
 			if (Plugin.Condition[ConditionFlag.Mounted]) {
 				Services.ActionService.Dismount();
 				TaskQueue.Add(TaskQueue.Idle(DismountTime));

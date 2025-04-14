@@ -13,6 +13,8 @@ namespace TwelvesBounty.Data {
 		public uint ItemId { get; set; } = 0;
 		public List<EorzeaTimeRange> Uptime { get; set; } = [];
 		public bool Repeat { get; set; } = false;
+		public RotationType RotationType { get; set; } = RotationType.External;
+
 
 		[IgnoreDataMember]
 		public string MapName {

@@ -8,6 +8,7 @@ namespace TwelvesBounty.Data;
 public class Route {
 	public Guid Id { get; set; } = Guid.Empty;
 	public string Name { get; set; } = string.Empty;
+	public int UseCordialBelow { get; set; } = 0;
 	public List<GatheringNodeGroup> Groups { get; set; } = [];
 
 	public Route Clone() {

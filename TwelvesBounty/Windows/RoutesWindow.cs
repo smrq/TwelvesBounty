@@ -4,10 +4,14 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Utility;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using ImGuiNET;
 using System;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics.Arm;
+using System.Threading.Channels;
 using TwelvesBounty.Data;
 using TwelvesBounty.Exec;
 using TwelvesBounty.Services;
@@ -75,7 +79,6 @@ public class RoutesWindow : Window, IDisposable {
 		DrawRouteEditColumn();
 	}
 
-	private string confirmState = string.Empty;
 	private void DrawRouteListColumn() {
 		if (RouteManager.Route == null) {
 			using var disabled = ImRaii.Disabled(activeRoute == null);
@@ -162,6 +165,12 @@ public class RoutesWindow : Window, IDisposable {
 		var name = activeRoute.Name;
 		if (ImGui.InputText("Route Name", ref name, 256)) {
 			activeRoute.Name = name;
+			Configuration.Save();
+		}
+
+		var useCordialBelow = activeRoute.UseCordialBelow;
+		if (ImGui.DragInt("Use Hi-Cordial below", ref useCordialBelow, 10.0f, 0, 1000, useCordialBelow == 0 ? "Never" : "%d GP", ImGuiSliderFlags.AlwaysClamp)) {
+			activeRoute.UseCordialBelow = useCordialBelow;
 			Configuration.Save();
 		}
 
@@ -321,24 +330,22 @@ public class RoutesWindow : Window, IDisposable {
 		}
 		using (var popup = ImRaii.Popup("RotationPopup")) {
 			if (popup) {
-				if (ImGui.MenuItem("External")) {
+				if (ImGui.MenuItem(RotationType.External.GetDisplayName())) {
+					group.RotationType = RotationType.External;
+					Configuration.Save();
 				}
-				if (ImGui.MenuItem("Max yield")) {
+				if (ImGui.MenuItem(RotationType.NoGP.GetDisplayName())) {
+					group.RotationType = RotationType.NoGP;
+					Configuration.Save();
 				}
-				if (ImGui.MenuItem("Max attempts")) {
-				}
-				if (ImGui.MenuItem("No GP")) {
-				}
-				if (ImGui.MenuItem("Ephemeral nodes")) {
-				}
-				if (ImGui.MenuItem("Legendary nodes")) {
-				}
-				if (ImGui.MenuItem("Crystals")) {
+				if (ImGui.MenuItem(RotationType.BountifulBlessed.GetDisplayName())) {
+					group.RotationType = RotationType.BountifulBlessed;
+					Configuration.Save();
 				}
 			}
 		}
 		ImGui.SameLine();
-		ImGui.Text("External rotation");
+		ImGui.Text(group.RotationType.GetDisplayName());
 
 		ImGui.TableNextColumn();
 
@@ -394,38 +401,28 @@ public class RoutesWindow : Window, IDisposable {
 		}
 	}
 
-	private string debugDataId = "";
 	private unsafe void DrawDebugTab() {
 		ImGui.Text("Debug");
 
-		var id = debugDataId;
-		if (ImGui.InputText("Data ID", ref id, 16)) {
-			debugDataId = id;
-		}
-
-		uint dataIdHex = 0;
-		try {
-			dataIdHex = Convert.ToUInt32(debugDataId, 16);
-		} catch { }
-		var obj = Plugin.ObjectTable
-			.FirstOrDefault(obj => obj.DataId == dataIdHex && obj.IsTargetable);
-		var point = obj?.Position;
-		if (point != null) {
-			var vec = point.Value - Plugin.ClientState.LocalPlayer!.Position;
-			var dist = vec.Length();
-			ImGui.Text($"XYZ Distance to target: {dist}");
-
-			vec.Y = 0;
-			var xydist = vec.Length();
-			ImGui.Text($"XZ Distance to target: {xydist}");
-		}
+		ImGui.Text($"Current map: {Plugin.ClientState.MapId}");
 
 		ImGui.Text($"Player position: {Plugin.ClientState.LocalPlayer!.Position}");
+		ImGui.Text($"Job id: {Plugin.ClientState.LocalPlayer!.ClassJob.RowId}");
+		ImGui.Text($"IsTargetable: {Plugin.ClientState.LocalPlayer!.IsTargetable}");
+		ImGui.Text($"IsCasting: {Plugin.ClientState.LocalPlayer!.IsCasting}");
+		ImGui.Text($"GP: {Plugin.ClientState.LocalPlayer!.CurrentGp}");
+		ImGui.Text($"Max GP: {Plugin.ClientState.LocalPlayer!.MaxGp}");
+		ImGui.Text($"Statuses:");
+		foreach (var s in Plugin.ClientState.LocalPlayer!.StatusList) {
+			ImGui.SameLine();
+			ImGui.Text($"  {s.StatusId}");
+		}
+		ImGui.Text($"Cordial ready: {Services.ActionService.IsHiCordialReady}");
 
 		ImGui.Text($"Eorzea time: {Services.TimeService.EorzeaTimeRaw}");
 
 		ImGui.Text($"Gatherables:");
-		foreach (var gid in Services.GatheringService.Debug) {
+		foreach (var gid in Services.GatheringService.GatherItemIds) {
 			ImGui.SameLine();
 			ImGui.Text($"  {gid}");
 		}
@@ -440,6 +437,12 @@ public class RoutesWindow : Window, IDisposable {
 
 		ImGui.Text($"{Services.InventoryService.EmptySlots} inventory slots free");
 		ImGui.Text($"{Services.InventoryService.ReducibleItems.Count()} reducible items");
+		if (ImGui.Button($"Show reduction window")) {
+			Services.InventoryService.OpenReduce();
+		}
+		if (ImGui.Button($"Reduce first item")) {
+			Services.InventoryService.ReduceFirstItem();
+		}
 	}
 
 	private static float MarkerToWorldCoord(float coord, float scale, float offset) {

@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
@@ -41,6 +42,8 @@ namespace TwelvesBounty.Services {
 
 		public bool IsRepairOpen { get => Plugin.GameGui.GetAddonByName("Repair") != nint.Zero; }
 
+		public bool IsConfirmationOpen { get => Plugin.GameGui.GetAddonByName("SelectYesno") != nint.Zero; }
+
 		private bool CanRepairItem(uint itemId) {
 			var itemSheet = Plugin.DataManager.GetExcelSheet<Item>()!;
 			var classJobSheet = Plugin.DataManager.GetExcelSheet<ClassJob>()!;
@@ -78,14 +81,22 @@ namespace TwelvesBounty.Services {
 
 		public IEnumerable RepairTask() {
 			while (CanRepair) {
-				if (!IsRepairOpen) {
+				if (Plugin.Condition[ConditionFlag.Occupied39]) {
+					// Currently repairing
+					yield return null;
+				} else if (!IsRepairOpen) {
 					Throttle.ExecuteConditional(throttle, () => {
 						OpenRepair();
 					});
 					yield return null;
-				} else {
+				} else if (!IsConfirmationOpen) {
 					Throttle.ExecuteConditional(throttle, () => {
 						RepairAll();
+					});
+					yield return null;
+				} else {
+					Throttle.ExecuteConditional(throttle, () => {
+						ConfirmRepair();
 					});
 					yield return null;
 				}
@@ -129,6 +140,18 @@ namespace TwelvesBounty.Services {
 			if (!addon->RepairAllButton->IsEnabled) return false;
 
 			var resNode = addon->RepairAllButton->OwnerNode->AtkResNode;
+			var e = resNode.AtkEventManager.Event;
+			addon->ReceiveEvent(e->State.EventType, (int)e->Param, e);
+			return true;
+		}
+
+		private bool ConfirmRepair() {
+			var addon = (AddonSelectYesno*)Plugin.GameGui.GetAddonByName("SelectYesno");
+			if (addon == null) return false;
+			if (!addon->AtkUnitBase.IsVisible) return false;
+			if (!addon->YesButton->IsEnabled) return false;
+
+			var resNode = addon->YesButton->OwnerNode->AtkResNode;
 			var e = resNode.AtkEventManager.Event;
 			addon->ReceiveEvent(e->State.EventType, (int)e->Param, e);
 			return true;

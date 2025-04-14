@@ -18,7 +18,7 @@ namespace TwelvesBounty.Services {
 		public ServiceInstances() {
 			NavmeshIPC = new NavmeshIPC();
 			ActionService = new ActionService(actionThrottle);
-			GatheringService = new GatheringService();
+			GatheringService = new GatheringService(ActionService);
 			GearsetService = new GearsetService();
 			InventoryService = new InventoryService(actionThrottle);
 			RepairService = new RepairService(actionThrottle);
